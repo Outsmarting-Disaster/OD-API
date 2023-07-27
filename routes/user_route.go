@@ -1,7 +1,7 @@
 package routes
 
 import (
-    "outsmarting-disaster-api/controllers"
+    "od-api/controllers"
     "github.com/gin-gonic/gin"
 )
 

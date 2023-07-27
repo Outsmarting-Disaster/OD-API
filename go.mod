@@ -1,4 +1,4 @@
-module outsmarting-disaster-api
+module od-api
 
 go 1.20
 

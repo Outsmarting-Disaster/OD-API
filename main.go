@@ -1,8 +1,8 @@
 package main
 
 import (
-	"outsmarting-disaster-api/configs"
-	"outsmarting-disaster-api/routes" //add this
+	"od-api/configs"
+	"od-api/routes" //add this
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,6 +19,7 @@ func main() {
 		configs.ConnectDB()
 
 		routes.UserRoute(router) //add this
+                routes.BuoyRoute(router)
 
         router.Run("localhost:6000") 
 }

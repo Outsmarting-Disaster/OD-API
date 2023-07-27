@@ -2,9 +2,9 @@ package controllers
 
 import (
     "context"
-    "outsmarting-disaster-api/configs"
-    "outsmarting-disaster-api/models"
-    "outsmarting-disaster-api/responses"
+    "od-api/configs"
+    "od-api/models"
+    "od-api/responses"
     "net/http"
     "time"
 
