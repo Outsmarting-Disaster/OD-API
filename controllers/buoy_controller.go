@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+	"math/rand"
+	// "fmt"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
@@ -24,30 +26,21 @@ func CreateBuoy() gin.HandlerFunc {
 
 		// Validate the request body
 		if err := c.BindJSON(&buoy); err != nil {
-			c.JSON(http.StatusBadRequest, responses.BuoyResponse{
-				Status:  http.StatusBadRequest,
-				Message: "Invalid request",
-				Data:    nil,
-			})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 			return
 		}
 
 		// Insert the buoy into the database using the provided MongoDB collection
 		result, err := buoyCollection.InsertOne(ctx, buoy)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, responses.BuoyResponse{
-				Status:  http.StatusInternalServerError,
-				Message: "Failed to create buoy",
-				Data:    nil,
-			})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create buoy"})
 			return
 		}
 
-		c.JSON(http.StatusCreated, responses.BuoyResponse{
-			Status:  http.StatusCreated,
-			Message: "Buoy created successfully",
-			Data:    map[string]interface{}{"id": result.InsertedID},
-		})
+		c.JSON(http.StatusCreated, gin.H{"message": "Buoy created successfully", "data": result.InsertedID})
+
+		// Start a Goroutine to periodically post waves data for this buoy
+		// go postWavesDataPeriodically(ctx, buoy)
 	}
 }
 
@@ -281,5 +274,137 @@ func AddWavesDataToBuoy() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": "Waves data added to buoy successfully"})
+	}
+}
+
+
+
+const (
+	MinLatitude  = -90.0
+	MaxLatitude  = 90.0
+	MinLongitude = -180.0
+	MaxLongitude = 180.0
+)
+// Generate realistic latitude and longitude for the buoy's location
+func generateRandomLocation(initialLatitude, initialLongitude float64) (float64, float64) {
+	// Calculate random deviation from the initial latitude and longitude
+	latitudeDeviation := rand.Float64() * 0.01
+	longitudeDeviation := rand.Float64() * 0.01
+
+	// Calculate the new latitude and longitude by adding the deviation to the initial coordinates
+	latitude := initialLatitude + latitudeDeviation
+	longitude := initialLongitude + longitudeDeviation
+
+	// Clamp latitude and longitude to the valid range
+	if latitude < MinLatitude {
+		latitude = MinLatitude
+	} else if latitude > MaxLatitude {
+		latitude = MaxLatitude
+	}
+	if longitude < MinLongitude {
+		longitude = MinLongitude
+	} else if longitude > MaxLongitude {
+		longitude = MaxLongitude
+	}
+
+	return latitude, longitude
+}
+
+// Generate realistic wave data
+func generateRandomWavesData(initialLatitude, initialLongitude float64) models.WavesData {
+	// Generate random wave height (between 0.5 and 5 meters)
+	significantWaveHeight := rand.Float64()*4.5 + 0.5
+
+	// Generate random wave period (between 4 and 15 seconds)
+	peakPeriod := rand.Float64()*11.0 + 4.0
+
+	// Generate random wave direction (between 0 and 360 degrees)
+	peakDirection := rand.Float64() * 360.0
+
+	// Generate random timestamp within the last 24 hours
+	timestamp := time.Now().Add(-time.Duration(rand.Intn(24))*time.Hour).UTC().Format(time.RFC3339)
+
+	// Generate random latitude and longitude for the buoy's location
+	latitude, longitude := generateRandomLocation(initialLatitude, initialLongitude)
+
+	// Calculate random direction for the waves (deviation from peakDirection)
+	peakDirectionalSpread := rand.Float64()*30.0 + 5.0
+
+	// Calculate mean direction (opposite to peakDirection)
+	meanDirection := peakDirection + 180.0
+	if meanDirection > 360.0 {
+		meanDirection -= 360.0
+	}
+
+	// Calculate random spread for the mean direction
+	meanDirectionalSpread := rand.Float64()*60.0 + 15.0
+
+	return models.WavesData{
+		SignificantWaveHeight:   significantWaveHeight,
+		PeakPeriod:              peakPeriod,
+		MeanPeriod:              peakPeriod * 0.9,
+		PeakDirection:           peakDirection,
+		PeakDirectionalSpread:   peakDirectionalSpread,
+		MeanDirection:           meanDirection,
+		MeanDirectionalSpread:   meanDirectionalSpread,
+		Timestamp:               timestamp,
+		Latitude:                latitude,
+		Longitude:               longitude,
+	}
+}
+
+// Insert wave data into the database for a specific buoy ID
+func InsertWaveDataForBuoy(buoyID string, waveData models.WavesData) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	objID, err := primitive.ObjectIDFromHex(buoyID)
+	if err != nil {
+		return err
+	}
+
+	filter := bson.M{"_id": objID}
+	update := bson.M{"$push": bson.M{"waves": waveData}}
+
+	_, err = buoyCollection.UpdateOne(ctx, filter, update)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func CreateWaveDataForBuoy() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var data models.WavesData
+
+		// Validate the request body
+		if err := c.BindJSON(&data); err != nil {
+			c.JSON(http.StatusBadRequest, responses.UserResponse{
+				Status:  http.StatusBadRequest,
+				Message: "Invalid request",
+				Data:    map[string]interface{}{},
+			})
+			return
+		}
+
+		// You can retrieve the buoyID from the request, whether it's from a URL parameter or JSON data
+		buoyID := "64c1de1bccc77c103ab51ed1" // Replace this with the actual buoy ID from the request
+
+		// Insert the wave data for the specified buoy ID
+		if err := InsertWaveDataForBuoy(buoyID, data); err != nil {
+			c.JSON(http.StatusInternalServerError, responses.UserResponse{
+				Status:  http.StatusInternalServerError,
+				Message: "Failed to insert wave data",
+				Data:    map[string]interface{}{},
+			})
+			return
+		}
+
+		c.JSON(http.StatusCreated, responses.UserResponse{
+			Status:  http.StatusCreated,
+			Message: "Wave data created successfully",
+			Data:    map[string]interface{}{},
+		})
 	}
 }
